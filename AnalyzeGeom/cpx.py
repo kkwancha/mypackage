@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import networkx as nx
 import os
 from ..globalvars import ATOMIC_NUM_TO_ELEMENT, COVALENT_RADII, TRANSITION_METALS, ELEMENT_TO_ATOMIC_NUM
 
@@ -38,13 +39,22 @@ class Atom:
 class Mol:
     def __init__(self):
         self.atoms = []
+        self.bonds = dict()
         self.xyz_df = None
         self.distance_matrix = None
+        self.bond_matrix = None
+        self.G_Graph = nx.Graph()
+        self.G_MultiGraph = nx.MultiGraph()
 
     @property
     def natoms(self):
         """Dynamically calculate the number of atoms based on the length of self.atoms."""
         return len(self.atoms)
+    
+    @property
+    def nbonds(self):
+        """Dynamically calculate the number of bonds based on the length of self.atoms."""
+        return len(self.bonds)
 
     @property
     def coords(self):
@@ -119,45 +129,151 @@ class Mol:
                 self.atoms.append(Atom(idx, element, [x, y, z]))  # Create Atom instances directly in self.atoms
         except (ValueError, IndexError) as e:
             raise ValueError("Invalid XYZ format") from e
-                
-    def readmol2(self, content):
-        atoms = []
-        bonds = []
-        lines = content.splitlines()
-        section_atom = None
+        self.bond_matrix = np.zeros((num_atoms, num_atoms), dtype=int)
+        return self
+        
+    
+    def readmol2_1(self, content):
+        """
+        Parse the MOL2 content to create Atom objects and bond matrix.
 
-        # Find the number of atoms and the start of the ATOM section
-        num_atoms = None
+        Parameters
+        ----------
+        content : str
+            The MOL2 format content as a string.
+        """
+        lines = content.splitlines()
+        section_molecule = None
+        section_atom = None
+        section_bond = None
+        num_atoms = 0
+        num_bonds = 0
+
         for idx, line in enumerate(lines):
             if line.startswith('@<TRIPOS>MOLECULE'):
-                try:
-                    num_atoms = int(lines[idx + 2].split()[0])  # Get the number of atoms
-                except (IndexError, ValueError) as e:
-                    raise ValueError(f"Could not read number of atoms from the file: {e}")
-            if line.startswith('@<TRIPOS>ATOM'):
+                section_molecule = idx
+            elif line.startswith('@<TRIPOS>ATOM'):
                 section_atom = idx
+            elif line.startswith('@<TRIPOS>BOND'):
+                section_bond = idx
 
-        if num_atoms is None:
-            raise ValueError("Number of atoms could not be determined from the file")
+        if section_atom is None or section_bond is None:
+            raise ValueError("ATOM or BOND section not found in MOL2 content.")
 
-        # Initialize arrays for atoms and coordinates
+        # Parse the MOLECULE section
+        try:
+            num_atoms = int(lines[section_molecule + 2].split()[0])
+            num_bonds = int(lines[section_molecule + 2].split()[1])
+        except (IndexError, ValueError) as e:
+            raise ValueError(f"Could not read number of atoms from the file: {e}")
+        
+        # Parse the ATOM section
         self.atoms = np.empty(num_atoms, dtype=object)
-        # self.coords = np.empty((num_atoms, 3), dtype=float)
-
-        # Read atom section
         if section_atom is not None:
-            coords = lines[section_atom + 1 : section_atom + 1 + num_atoms]
+            coords = lines[section_atom+1 : section_atom+1+num_atoms]
             for line in coords:
                 coord_list = line.split()
                 atom_idx = int(coord_list[0]) - 1  # Convert to 0-based index
                 element = remove_digits(coord_list[1])
                 x, y, z = map(float, coord_list[2:5])
-
-                # Create Atom object and store it
                 self.atoms[atom_idx] = Atom(atom_idx, element, [x, y, z])
-        
         else:
             raise ValueError("ATOM section not found in the file")
+
+        # Parse the BOND section
+        self.bond_matrix = np.zeros((num_atoms, num_atoms), dtype=int)
+        for line in lines[section_bond+1:section_bond+1+num_bonds]:
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            atom1_idx = int(parts[1]) - 1  # Convert to 0-based index
+            atom2_idx = int(parts[2]) - 1  # Convert to 0-based index
+            bond_type = parts[3]
+            # Determine bond order based on bond type
+            if bond_type == "1":
+                bond_order = 1.0  # Single bond
+            elif bond_type == "2":
+                bond_order = 2.0  # Double bond
+            elif bond_type == "3":
+                bond_order = 3.0  # Triple bond
+            elif bond_type == "ar":
+                bond_order = 1.5  # Aromatic bond
+            else:
+                bond_order = 0.0  # Undefined or unsupported bond type; ignore
+            self.bond_matrix[atom1_idx, atom2_idx] = bond_order
+            self.bond_matrix[atom2_idx, atom1_idx] = bond_order  # Symmetric for undirected bonds
+        return self
+    
+    def readmol2(self, content):
+        """
+        Parse the MOL2 content to create Atom objects and bond matrix.
+
+        Parameters
+        ----------
+        content : str
+            The MOL2 format content as a string.
+        """
+        lines = content.splitlines()
+        section_MOLECULE = None
+        section_ATOM = None
+        section_BOND = None
+        num_atoms = 0
+        num_bonds = 0
+
+        for idx, line in enumerate(lines):
+            if line.startswith('@<TRIPOS>MOLECULE'):
+                section_molecule = idx
+            elif line.startswith('@<TRIPOS>ATOM'):
+                section_ATOM = idx
+            elif line.startswith('@<TRIPOS>BOND'):
+                section_BOND = idx
+
+        if section_ATOM is None or section_BOND is None:
+            raise ValueError("ATOM or BOND section not found in MOL2 content.")
+
+        # Parse the MOLECULE section
+        try:
+            num_atoms = int(lines[section_molecule + 2].split()[0])
+            num_bonds = int(lines[section_molecule + 2].split()[1])
+        except (IndexError, ValueError) as e:
+            raise ValueError(f"Could not read number of atoms from the file: {e}")
+        
+        # Parse the ATOM section
+        self.atoms = np.empty(num_atoms, dtype=object)
+        if section_ATOM is not None:
+            for line in lines[section_ATOM+1 : section_ATOM+1+num_atoms]:
+                coord_list = line.split()
+                atom_idx = int(coord_list[0]) - 1  # Convert to 0-based index
+                element = remove_digits(coord_list[1])
+                x, y, z = map(float, coord_list[2:5])
+                self.atoms[atom_idx] = Atom(atom_idx, element, [x, y, z])
+        else:
+            raise ValueError("ATOM section not found in the file")
+
+        # Parse the BOND section
+        self.bond = np.empty(num_bonds, dtype=object)
+        if section_BOND is not None:
+            for line in lines[section_BOND+1:section_BOND+1+num_bonds]:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                atom1_idx = int(parts[1]) - 1  # Convert to 0-based index
+                atom2_idx = int(parts[2]) - 1  # Convert to 0-based index
+                bond_type = parts[3]
+                # Determine bond order based on bond type
+                if bond_type == "1":
+                    bond_order = 1.0  # Single bond
+                elif bond_type == "2":
+                    bond_order = 2.0  # Double bond
+                elif bond_type == "3":
+                    bond_order = 3.0  # Triple bond
+                elif bond_type == "ar":
+                    bond_order = 1.5  # Aromatic bond
+                else:
+                    bond_order = 0.0  # Undefined or unsupported bond type; ignore
+                self.add_bond(atom1_idx, atom2_idx, bond_type)
+        return self
+
     
     def writefile(self, file_format, outputgeom):
         """
@@ -229,8 +345,7 @@ class Mol:
         return "\n".join(lines)
    
     def get_coord_byidx(self, idx):
-        coord = self.atoms[idx].coord
-        return np.array(coord)
+        return np.array(self.atoms[idx].coord)
     
     def atom_byidx(self, idx):
         return self.atoms[idx]
@@ -280,35 +395,57 @@ class Mol:
 
     def get_distance_matrix(self):
         """
-        Calculate the distance matrix using broadcasting and vectorized operations.
-        
-        Returns:
-        - A pandas DataFrame containing the distance matrix.
+        Calculate and return the distance matrix for the molecule.
+
+        Returns
+        -------
+        distance_matrix : np.ndarray
+            A 2D numpy array where distance_matrix[i, j] is the distance between atom i and atom j.
         """
-        if self.xyz_df is None:
-            self._build_xyz_df()  # Build the DataFrame if it doesn't exist
-        atom_coordinates = self.xyz_df[['x', 'y', 'z']].to_numpy()
-        diff = atom_coordinates[:, np.newaxis, :] - atom_coordinates[np.newaxis, :, :]
-        distance_matrix = np.sqrt(np.sum(diff**2, axis=-1))
-        self.distance_matrix = pd.DataFrame(distance_matrix)
-        return self.distance_matrix
+        # Number of atoms in the molecule
+        num_atoms = len(self.atoms)
+
+        # Initialize an empty distance matrix
+        distance_matrix = np.zeros((num_atoms, num_atoms))
+
+        # Calculate pairwise distances using calc_distance
+        for i in range(num_atoms):
+            for j in range(i + 1, num_atoms):  # Only calculate the upper triangle
+                distance = self.calc_distance(i, j)
+                distance_matrix[i, j] = distance
+                distance_matrix[j, i] = distance  # Symmetric matrix
+
+        return distance_matrix
     
     def get_bond_existed(self, cutoff=0.1):
-        self.get_distance_matrix()
-        num_atoms = self.natoms
-        atoms = self.atoms
-        cov_radii = self.get_listofatomprop('cov_radii')
-        bond_existed = list()
+        """
+        Determine existing bonds based on the covalent radii of atoms.
+
+        Parameters
+        ----------
+        cutoff : float, optional
+            Additional distance tolerance added to the sum of covalent radii to consider a bond.
+
+        Returns
+        -------
+        bond_existed : list
+            A list of bonds, where each bond is represented by (atom_i, atom_j, bond_length).
+        """
+        distance_matrix = self.get_distance_matrix()
+        num_atoms = len(self.atoms)
+        
+        bond_existed = []
+
         for i in range(num_atoms):
             for j in range(i + 1, num_atoms):
-                bond_length = self.distance_matrix.iloc[i, j]
-                cov_radii_i = self.atoms[i].cov_radii  # Calculate covalent radius when needed
+                bond_length = distance_matrix[i, j]
+                cov_radii_i = self.atoms[i].cov_radii
                 cov_radii_j = self.atoms[j].cov_radii
                 covalent_sum = cov_radii_i + cov_radii_j + cutoff
-                
                 if bond_length < covalent_sum:
-                    bond_existed.append([atoms[i], atoms[j], bond_length])
-        return bond_existed            
+                    bond_existed.append((self.atoms[i], self.atoms[j], bond_length))
+
+        return bond_existed
     
     def calc_distance(self, atomA_idx, atomB_idx):
         try:
@@ -374,16 +511,28 @@ class Mol:
         return list_indices
     
     def atomnearby_from_idx(self, atomA_idx, cutoff=0.1):
-        bond_existed = self.get_bond_existed(cutoff=cutoff)
+        """
+        Find atoms nearby a specified atom based on covalent radii and a distance cutoff.
+
+        Parameters
+        ----------
+        atomA_idx : int
+            The index of the atom to find nearby atoms for.
+        cutoff : float, optional
+            Additional distance tolerance added to the sum of covalent radii to consider bonding.
+
+        Returns
+        -------
+        nearby_atoms : set
+            A set of Atom instances that are within bonding distance from the specified atom.
+        """
+        bond_existed = self.get_bond_existed(cutoff)
         nearby_atoms = set()
-        for bond in bond_existed:
-            if atomA_idx in [bond[0].idx, bond[1].idx]:  # Check if atomA_idx is part of the bond
-                atom1_idx = int(bond[0].idx)
-                atom2_idx = int(bond[1].idx)
-                if atom1_idx != atomA_idx:
-                    nearby_atoms.add(self.atoms[atom1_idx])  # Add Atom object based on its index
-                if atom2_idx != atomA_idx:
-                    nearby_atoms.add(self.atoms[atom2_idx])  # Add Atom object based on its index
+        for atom_i, atom_j, bond_length in bond_existed:
+            if atomA_idx == atom_i.idx:
+                nearby_atoms.add(atom_j)
+            elif atomA_idx == atom_j.idx:
+                nearby_atoms.add(atom_i)
         return nearby_atoms
     
     def get_unique_elements(self):
@@ -396,6 +545,13 @@ class Mol:
         if len(metals) == 0:
             return None
         return metals  # Set of metals, e.g., {'Ni', 'Pd'}
+    
+    def getAtom_transition_metal(self):
+        atom_list = []
+        for atom in self.atoms:
+            if atom.sym in TRANSITION_METALS:
+                atom_list.append(atom)
+        return atom_list
     
     def isbond(self, atomA_idx, atomB_idx, cutoff=0.1):
         cov_radii_A = self.atoms[atomA_idx].cov_radii
@@ -470,47 +626,180 @@ class Mol:
         angle_radians = np.arccos(dot_product_clipped)
         return np.degrees(angle_radians)
 
-    def reindex_atoms(self):
-        """Reindex atoms based on their position in self.atoms."""
-        for idx, atom in enumerate(self.atoms):
-            atom.idx = idx
-    
-    def addAtom(self, atom, reindex=True):
+    def reindex_atoms_and_bonds(self):
         """
-        Adds an Atom to the molecule and optionally reindexes all atoms.
+        Reindex all atoms in self.atoms and update self.bonds to reflect new atom indices.
+        """
+        # Create a mapping from old indices to new indices
+        old_to_new_indices = {}
+
+        # Reindex atoms
+        for new_idx, atom in enumerate(self.atoms):
+            old_to_new_indices[atom.idx] = new_idx
+            atom.idx = new_idx  # Update the atom's index
+
+        # Reindex bonds based on updated atom indices
+        new_bonds = {}
+        for (old_atomA_idx, old_atomB_idx), bond_type in self.bonds.items():
+            new_atomA_idx = old_to_new_indices[old_atomA_idx]
+            new_atomB_idx = old_to_new_indices[old_atomB_idx]
+            bond_key = tuple(sorted((new_atomA_idx, new_atomB_idx)))
+            new_bonds[bond_key] = bond_type
+
+        # Replace self.bonds with the reindexed bonds
+        self.bonds = new_bonds
+    
+    def add_atom(self, atom, reindex=True):
+        """
+        Add a new atom to the molecule.
 
         Parameters
         ----------
         atom : Atom
-            The Atom instance to add to the molecule.
+            The atom to be added.
         reindex : bool, optional
             If True, reindex all atoms after adding. Defaults to True.
         """
+        # Add atom with updated index
+        atom.idx = len(self.atoms)
         self.atoms.append(atom)
+        
+        # Reindex if necessary
         if reindex:
-            self.reindex_atoms()
-        
-        
-    def deleteAtom(self, idx):
+            self.reindex_atoms_and_bonds()
+            
+    def addMol(self, submol, reindex=True):
         """
-        Deletes an Atom from the molecule by index and reindexes the remaining atoms.
+        Add all atoms and bond connections from submol to the current molecule.
 
         Parameters
         ----------
-        idx : int
-            The index of the Atom to delete.
+        submol : Mol
+            The molecule to be added.
+        reindex : bool, optional
+            If True, reindex all atoms after adding. Defaults to True.
         """
-        atom_to_delete = None
-        for atom in self.atoms:
-            if atom.idx == idx:
-                atom_to_delete = atom
-                break
-        if atom_to_delete is None:
-            raise ValueError(f"No Atom with index {idx} found.")
-        self.atoms = [atom for atom in self.atoms if atom.idx != idx]
-        self.reindex_atoms()  # Update indices
+        # Calculate the index offset for new atoms
+        index_offset = len(self.atoms)
+
+        # Step 1: Add atoms from submol to self.atoms, with adjusted indices
+        new_atoms = []
+        for atom in submol.atoms:
+            # Create a new Atom with an updated index and add it to self.atoms
+            new_index = atom.idx + index_offset
+            new_atom = Atom(idx=new_index, sym=atom.sym, coord=atom.coord)
+            new_atoms.append(new_atom)  # Append directly to self.atoms
+        new_atoms_array = np.array(new_atoms, dtype=object)
+        self.atoms = np.append(self.atoms, new_atoms_array)
+        
+        # Step 2: Add bonds from submol to self.bonds, with adjusted indices
+        new_bonds = dict()
+        for (atomA_idx, atomB_idx), bond_type in submol.bonds.items():
+            # Adjust indices by adding the offset
+            new_atomA_idx = atomA_idx + index_offset
+            new_atomB_idx = atomB_idx + index_offset
+
+            # Use the adjusted indices to add the bond to self.bonds
+            bond_key = tuple(sorted((new_atomA_idx, new_atomB_idx)))
+            new_bonds[bond_key] = bond_type
+        self.bonds.update(new_bonds)
+        
+        # Step 3: Reindex atoms and bonds in self if requested
+        if reindex:
+            self.reindex_atoms_and_bonds()
+
+    def addMol_hi(self, submol, reindex=True):
+        """
+        Add all atoms and bond connections from submol to the current molecule.
+
+        Parameters
+        ----------
+        submol : Mol
+            The molecule to be added.
+        reindex : bool, optional
+            If True, reindex all atoms after adding. Defaults to True.
+        """
+        # Calculate the index offset for new atoms
+        index_offset = len(self.atoms)
+        self_atoms = self.atoms
+        self_bonds = self.bonds
+
+        # Step 1: Add atoms from submol to self, with adjusted indices
+        for atom in submol.atoms:
+            # Create a new Atom with an updated index and add it to self.atoms
+            new_index = atom.idx + index_offset
+            new_atom = Atom(idx=new_index, sym=atom.sym, coord=atom.coord)
+            self_atoms = np.append(self_atoms, new_atom)
+        print(self_atoms)
+
+        # Step 2: Add bonds from submol to self, with adjusted indices
+        for (atomA_idx, atomB_idx), bond_type in submol.bonds.items():
+            new_atomA_idx = atomA_idx + index_offset
+            new_atomB_idx = atomB_idx + index_offset
+            bond_key = tuple(sorted((new_atomA_idx, new_atomB_idx)))
+            self_bonds[bond_key] = bond_type
+            print(self_bonds)
+        #     # Adjust indices by adding the offset
+        #     new_atomA_idx = atomA_idx + index_offset
+        #     new_atomB_idx = atomB_idx + index_offset
+
+        #     # Use the adjusted indices to add the bond to self.bonds
+        #     bond_key = tuple(sorted((new_atomA_idx, new_atomB_idx)))
+        #     self.bonds[bond_key] = bond_type
+
+        # # Step 3: Reindex atoms and bonds in self if requested
+        # if reindex:
+        #     self.reindex_atoms_and_bonds()
+            
+    def reset_index_atoms_bonds(self):
+        """
+        Reindex all atoms in self.atoms and update self.bonds to reflect new atom indices.
+        """
+        # Create a mapping from old indices to new indices
+        old_to_new_indices = {}
+
+        # Reindex atoms
+        for new_idx, atom in enumerate(self.atoms):
+            old_to_new_indices[atom.idx] = new_idx
+            atom.idx = new_idx  # Update the atom's index
+
+        # Reindex bonds based on updated atom indices
+        new_bonds = {}
+        for (old_atomA_idx, old_atomB_idx), bond_type in self.bonds.items():
+            new_atomA_idx = old_to_new_indices[old_atomA_idx]
+            new_atomB_idx = old_to_new_indices[old_atomB_idx]
+            bond_key = tuple(sorted((new_atomA_idx, new_atomB_idx)))
+            new_bonds[bond_key] = bond_type
+
+        # Replace self.bonds with the reindexed bonds
+        self.bonds = new_bonds
+        
+    def deleteAtom(self, atom_idx, reindex=True):
+        """
+        Delete an atom and its associated bonds from the molecule.
+
+        Parameters
+        ----------
+        atom_idx : int
+            The index of the atom to delete.
+        reindex : bool, optional
+            If True, reindex all atoms and bonds after deletion. Defaults to True.
+        """
+        # Remove the atom from self.atoms
+        self.atoms = [atom for atom in self.atoms if atom.idx != atom_idx]
+
+        # Remove any bonds involving this atom
+        self.bonds = {
+            bond_key: bond_type
+            for bond_key, bond_type in self.bonds.items()
+            if atom_idx not in bond_key
+        }
+
+        # Reindex if necessary
+        if reindex:
+            self.reindex_atoms_and_bonds()
     
-    def deleteAtoms(self, indices):
+    def deleteAtoms(self, indices, reindex=True):
         """
         Deletes a list of Atoms from the molecule based on their indices.
 
@@ -526,7 +815,8 @@ class Mol:
         """
         indices_set = set(indices)
         self.atoms = [atom for atom in self.atoms if atom.idx not in indices_set]
-        self.reindex_atoms()
+        if reindex:
+            self.reindex_atoms_and_bonds()
     
     def deleteAtoms_bysym(self, symbols):
         """
@@ -550,7 +840,132 @@ class Mol:
             raise ValueError(f"No atoms with symbols {symbols} found.")
         self.atoms = atoms_to_keep
         self._coords = np.array([atom.coord for atom in self.atoms]) if self.atoms else None
-        self.reindex_atoms()
+        self.reindex_atoms_and_bonds()
+        
+    def add_bond(self, atomA_idx, atomB_idx, bond_type):
+        """
+        Adds a bond between two atoms with a specified bond type.
+
+        Parameters
+        ----------
+        atomA : Atom
+            The first atom in the bond.
+        atomB : Atom
+            The second atom in the bond.
+        bond_type : str
+            The type of bond (e.g., '1', '2', 'ar').
+
+        Returns
+        -------
+        self : Mol
+            Returns the instance to allow method chaining.
+        """
+        # Use a sorted tuple of atom indices as the key to ensure order independence
+        bond_key = tuple(sorted((atomA_idx, atomB_idx)))
+        self.bonds[bond_key] = bond_type
+        return self
+    
+    def delete_bond(self, atomA_idx, atomB_idx):
+        """
+        Deletes a bond between two atoms if it exists.
+
+        Parameters
+        ----------
+        atomA_idx : int
+            The index of the first atom in the bond.
+        atomB_idx : int
+            The index of the second atom in the bond.
+
+        Returns
+        -------
+        bool
+            Returns True if the bond was successfully deleted, False if the bond was not found.
+        """
+        bond_key = tuple(sorted((atomA_idx, atomB_idx)))
+        if bond_key in self.bonds:
+            del self.bonds[bond_key]
+            return True
+        else:
+            return False
+    
+
+    def get_bond_fromidx(self, atom_idx):
+        """
+        Retrieve all bonds involving a specific atom index.
+
+        Parameters
+        ----------
+        atom_idx : int
+            The index of the atom for which to retrieve bonds.
+
+        Returns
+        -------
+        list of tuples
+            A list of tuples where each tuple contains the other atom's index
+            and the bond type.
+        """
+        bonds_for_atom = dict()
+
+        # Iterate through self.bonds and check if atom_idx is in the bond key
+        for (atomA_idx, atomB_idx), bond_type in self.bonds.items():
+            if atomA_idx == atom_idx:
+                # If atom_idx is the first atom in the bond
+                bond = {(atomA_idx, atomB_idx): bond_type}
+                bonds_for_atom.update(bond)
+            elif atomB_idx == atom_idx:
+                # If atom_idx is the second atom in the bond
+                bond = {(atomA_idx, atomB_idx): bond_type}
+                bonds_for_atom.update(bond)
+
+        return bonds_for_atom
+    
+    def get_bond_type(self, atomA_idx, atomB_idx):
+        """
+        Retrieves the bond type between two atoms, if it exists.
+
+        Parameters
+        ----------
+        atom_a : Atom or int
+            The first atom in the bond, or its index.
+        atom_b : Atom or int
+            The second atom in the bond, or its index.
+
+        Returns
+        -------
+        str or None
+            The bond type (e.g., '1', '2', 'ar') if the bond exists, or None if it doesn't.
+        """
+        bond_key = tuple(sorted((atomA_idx, atomB_idx)))
+        return self.bonds.get(bond_key, None)
+    
+    def get_bond_length(self, atomA_idx, atomB_idx):
+        """
+        Get the bond length between two atoms specified by their indices.
+
+        Parameters
+        ----------
+        atomA_idx : int
+            The index of the first atom.
+        atomB_idx : int
+            The index of the second atom.
+
+        Returns
+        -------
+        float
+            The bond length (distance) between the two atoms.
+
+        Raises
+        ------
+        ValueError
+            If there is no bond between atomA_idx and atomB_idx in self.bonds.
+        """
+        # Ensure that the bond exists in self.bonds
+        bond_key = tuple(sorted((atomA_idx, atomB_idx)))
+        if bond_key not in self.bonds:
+            raise ValueError(f"No bond found between atoms {atomA_idx} and {atomB_idx}")
+
+        # Calculate and return the bond length using Euclidean distance
+        return self.calc_distance(atomA_idx, atomB_idx)
 
     def getAtom_fromidx(self, idx):
         matching_atoms = [atom for atom in self.atoms if atom.idx == idx]
@@ -592,8 +1007,102 @@ class Mol:
         coords = np.vstack([atom.coord for atom in list_Atoms])
         return coords
     
-    def setnewcoord(self, idx, newcoord):
-        self.atoms
+    def generate_MultiGraph(self):
+        """
+        Generate and return a NetworkX MultiGraph from self.atoms and self.bonds.
+
+        Returns
+        -------
+        G : networkx.MultiGraph
+            The generated molecular graph where nodes represent atoms and edges represent bonds.
+        """
+        G = nx.MultiGraph()
+
+        for atom in self.atoms:
+            G.add_node(atom.idx, sym=atom.sym, coord=atom.coord)
+        
+        for (atomA_idx, atomB_idx), bond_type in self.bonds.items():
+            G.add_edge(atomA_idx, atomB_idx, bond_type=bond_type)
+
+        return G
+    
+    def generate_Graph(self):
+        """
+        Generate and return a NetworkX Graph from self.atoms and self.bonds.
+
+        Returns
+        -------
+        G : networkx.Graph
+            The generated molecular graph where nodes represent atoms and edges represent bonds.
+            Only a single edge is allowed between any two nodes.
+        """
+        G = nx.Graph()
+
+        # Add atoms as nodes
+        for atom in self.atoms:
+            G.add_node(atom.idx, sym=atom.sym, coord=atom.coord)
+
+        for (atomA_idx, atomB_idx), bond_type in self.bonds.items():
+            # If a bond already exists, it will not overwrite in an nx.Graph
+            if not G.has_edge(atomA_idx, atomB_idx):
+                G.add_edge(atomA_idx, atomB_idx, bond_type=bond_type)
+
+        return G
+    
+    def get_graph_hash(self):
+        """
+        Generate the Weisfeiler-Lehman graph hash for the full molecule.
+
+        Returns
+        -------
+        gh : str
+            The Weisfeiler-Lehman graph hash of the molecule.
+        """
+        graph = self.generate_Graph()
+        graph_hash = nx.weisfeiler_lehman_graph_hash(graph, node_attr='sym')
+        return graph_hash
+    
+    def generate_bond_matrix(self):
+        """
+        Generate a bond (adjacency) matrix for the molecule.
+
+        Returns
+        -------
+        bond_matrix : np.ndarray
+            A 2D numpy array where bond_matrix[i, j] represents the bond type or bond order
+            between atom i and atom j.
+        """
+        num_atoms = self.natoms
+        bond_matrix = np.zeros((num_atoms, num_atoms), dtype=int)
+        for (atomA_idx, atomB_idx), bond_type in self.bonds.items():
+            # Set the bond order or type in both directions (i, j) and (j, i)
+            bond_order = self._get_bond_order(bond_type)
+            bond_matrix[atomA_idx, atomB_idx] = bond_order
+            bond_matrix[atomB_idx, atomA_idx] = bond_order
+        return bond_matrix
+
+    def _get_bond_order(self, bond_type):
+        """
+        Convert bond type to bond order.
+
+        Parameters
+        ----------
+        bond_type : str
+            The type of bond (e.g., 'single', 'double', 'triple', 'ar').
+
+        Returns
+        -------
+        int
+            The bond order as an integer (e.g., 1 for single, 2 for double, etc.).
+        """
+        bond_order_map = {'1': 1.0,
+                          '2': 2.0,
+                          '3': 3.0,
+                          'ar': 1.5,
+                          'ts': 0.5
+        }
+        return bond_order_map.get(bond_type, 0)  # Default to 0 if bond type is unrecognized
+    
     
 class MolLigand(Mol):
     def __init__(self):
@@ -691,6 +1200,8 @@ class MolLigand(Mol):
             atomnearby = list(self.atomnearby_from_idx(idx_catom))
             adjcatoms[idx_catom] = atomnearby
         return adjcatoms
+    
+    # def lonepair(self):
     
         
         
