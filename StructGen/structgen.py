@@ -2,7 +2,7 @@ import glob, os
 import numpy as np
 import networkx as nx
 from ..globalvars import MYPACKAGE_DIR
-from ..AnalyzeGeom import cpx, geommath
+from ..AnalyzeGeom import geommath, geomobj
 
 TEMPLATE_GEOM = {'sqp' : 'sqp.xyz',
                  'tsoa': 'tsoa.xyz',
@@ -12,8 +12,8 @@ TEMPLATE_GEOM = {'sqp' : 'sqp.xyz',
 
 def create_template_Mol(geom):
     geom_template_path = TEMPLATE_GEOM[geom]
-    file_path = os.path.join(MYPACKAGE_DIR, 'Data/Geometries/', geom_template_path)
-    template_Mol = cpx.Mol()
+    file_path = os.path.join(MYPACKAGE_DIR, 'DataBase/Geometries/', geom_template_path)
+    template_Mol = geomobj.Mol()
     template_Mol.readfile('xyz', file_path)
     return template_Mol
 
@@ -42,7 +42,9 @@ def add_metal(metal_center):
 def getbondlength_fromsym(sym1, sym2):
     BONDLENGTH = {
         frozenset(['Pd', 'P']): 2.310,
-        frozenset(['Ni', 'P']): 2.213
+        frozenset(['Ni', 'P']): 2.213,
+        frozenset(['Pd', 'C']): 1.994,
+        frozenset(['Ni', 'C']): 1.890
     }
     
     bond_pair = frozenset([sym1, sym2])  # Use frozenset to ignore order of elements
@@ -158,7 +160,7 @@ def genstruct_M(geom, list_metal_center, list_ligand_path, list_ligand_catoms):
         ligand_path = list_ligand_path[idx]
         ligand_catoms = list_ligand_catoms[idx]
         # Step 1: Load the ligand molecule
-        lig_Mol = cpx.MolLigand()
+        lig_Mol = geomobj.MolLigand()
         lig_Mol.readfile('mol2', ligand_path)
         lig_Mol.set_catoms(list_ligand_catoms[idx])
         
@@ -198,14 +200,14 @@ def genstruct_M(geom, list_metal_center, list_ligand_path, list_ligand_catoms):
         # Step 8: Add rotated ligand atoms to the template molecule
         for sym, coord in zip(lig_Mol.getlistofsym(), rotated_coords):
             num_atoms = template_Mol.natoms
-            template_Mol.addAtom(cpx.Atom(num_atoms, sym, coord))
+            template_Mol.addAtom(geomobj.Atom(num_atoms, sym, coord))
     
     # 12. Delete template atoms
     template_Mol.deleteAtoms_bysym(['X'])
     
     return template_Mol
 
-
+# lig = [name for name, count in zip(lig_name, lig_occ) for _ in range(count)]
 def genstruct(geom, list_metal_center, list_ligand_path, list_ligand_catoms):
     """
     Generate a molecular structure by defining the metal center and adding multiple ligands to a template.
@@ -248,7 +250,7 @@ def genstruct(geom, list_metal_center, list_ligand_path, list_ligand_catoms):
         ligand_path = list_ligand_path[idx]
         ligand_catoms = list_ligand_catoms[idx]
         # Step 1: Load the ligand molecule
-        lig_Mol = cpx.MolLigand()
+        lig_Mol = geomobj.MolLigand()
         lig_Mol.readfile('mol2', ligand_path)
         lig_Mol.set_catoms(list_ligand_catoms[idx])
         

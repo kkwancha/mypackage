@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import networkx as nx
+from openbabel import openbabel
 import os
 from ..globalvars import ATOMIC_NUM_TO_ELEMENT, COVALENT_RADII, TRANSITION_METALS, ELEMENT_TO_ATOMIC_NUM
 
@@ -125,11 +126,13 @@ class Mol:
                 if len(parts) != 4:
                     raise ValueError(f"Invalid line in XYZ data: {line}")
                 element = parts[0]
-                x, y, z = map(float, parts[1:])
+                x, y, z = map(lambda x: x.replace('–','-'), parts[1:4])
+                x, y, z = map(float, [x, y, z])
                 self.atoms.append(Atom(idx, element, [x, y, z]))  # Create Atom instances directly in self.atoms
         except (ValueError, IndexError) as e:
+            print(e)
             raise ValueError("Invalid XYZ format") from e
-        self.bond_matrix = np.zeros((num_atoms, num_atoms), dtype=int)
+        # self.bond_matrix = np.zeros((num_atoms, num_atoms), dtype=int)
         return self
         
     
@@ -284,7 +287,7 @@ class Mol:
         - file_format: Format of the file (e.g., 'xyz', 'mol2').
         """
         with open(outputgeom, 'w') as file:
-            content = self._generate_content(file_format)
+            content = self._parse_write(file_format)
             file.write(content)
         
     def writestr(self, file_format):
@@ -337,13 +340,98 @@ class Mol:
         Returns:
         - A string containing the MOL2 format of the geometry.
         """
-        lines = ["@<TRIPOS>MOLECULE", "GeneratedMol", f"{len(self.atoms)} 0 0 0 0", ""]
+        lines = []
+        
+        # MOLECULE
+        lines.append('@<TRIPOS>MOLECULE')
+        mol_name = 'hi'
+        lines.append(mol_name)
+        num_atoms = self.natoms
+        num_bonds = len(self.bonds)  # Use the length of self.bonds
+        num_substr = 1
+        lines.append(f'{num_atoms} {num_bonds} {num_substr}')
+        mol_type = 'SMALL'
+        lines.append(mol_type)
+        charge_type = 'PartialCharges'
+        lines.append(charge_type)
+        lines.append('****')
+        comment = 'catoms'
+        lines.append(comment)
+        lines.append('')
+        
+        # ATOM
         lines.append("@<TRIPOS>ATOM")
         for atom in self.atoms:
-            lines.append(f"{atom.idx} {atom.sym} {atom.coord[0]:.6f} {atom.coord[1]:.6f} {atom.coord[2]:.6f} {atom.sym} 1 RES1 0.0000")
+            lines.append(f"{atom.idx+1} {atom.sym} {atom.coord[0]:.6f} {atom.coord[1]:.6f} {atom.coord[2]:.6f} {atom.sym} 1")
+        
+        # BOND
         lines.append("@<TRIPOS>BOND")
+        for bond_idx, (atom_pair, bond_type) in enumerate(self.bonds.items(), start=1):
+            atom1, atom2 = atom_pair
+            lines.append(f"{bond_idx} {atom1+1} {atom2+1} {bond_type}")
+        
         return "\n".join(lines)
-   
+    
+    def xyztoOBMol(self):
+        OB_Conversion = openbabel.OBConversion()
+        OB_Conversion.SetInFormat('xyz')
+        OB_Mol = openbabel.OBMol()
+        OB_Conversion.ReadString(OB_Mol, self.writexyz())
+        return OB_Mol
+
+    def get_bond_OB(self, savetoself=False):
+        OB_Mol = self.xyztoOBMol()
+        bonds = dict()
+        for bond in openbabel.OBMolBondIter(OB_Mol):
+            atomA = bond.GetBeginAtom()
+            atomB = bond.GetEndAtom()
+            bond_order = bond.GetBondOrder()
+            is_aromatic = bond.IsAromatic()
+            atomA_idx = atomA.GetIdx() - 1
+            atomB_idx = atomB.GetIdx() - 1
+            if is_aromatic:
+                bond_type = 'ar'
+            elif bond_order == 1:
+                bond_type = '1'
+            elif bond_order == 2:
+                bond_type = '2'
+            elif bond_order == 3:
+                bond_type = '3'
+            else:
+                bond_type = 'unknown'
+                
+            bond_key = tuple(sorted((atomA_idx, atomB_idx)))
+            bonds[bond_key] = bond_type
+            
+            if savetoself:
+                self.add_bond(atomA_idx, atomB_idx, bond_type)
+
+        return bonds
+    
+    def get_atom_hybridizations(self):
+        OB_Mol = self.xyztoOBMol()
+        # Initialize a dictionary to store hybridization information
+        hybridizations = {}
+
+        # Iterate over all atoms in the molecule
+        for atom in openbabel.OBMolAtomIter(OB_Mol):
+            atom_index = atom.GetIdx() - 1  # Zero-based indexing
+            hyb = atom.GetHyb()  # Get hybridization
+            
+            # Map hybridization integer to string representation
+            if hyb == 1:
+                hyb_str = 'sp'
+            elif hyb == 2:
+                hyb_str = 'sp2'
+            elif hyb == 3:
+                hyb_str = 'sp3'
+            else:
+                hyb_str = 'other'  # For any hybridization not covered
+
+            hybridizations[atom_index] = hyb_str
+
+        return hybridizations
+            
     def get_coord_byidx(self, idx):
         return np.array(self.atoms[idx].coord)
     
@@ -708,49 +796,6 @@ class Mol:
         if reindex:
             self.reindex_atoms_and_bonds()
 
-    def addMol_hi(self, submol, reindex=True):
-        """
-        Add all atoms and bond connections from submol to the current molecule.
-
-        Parameters
-        ----------
-        submol : Mol
-            The molecule to be added.
-        reindex : bool, optional
-            If True, reindex all atoms after adding. Defaults to True.
-        """
-        # Calculate the index offset for new atoms
-        index_offset = len(self.atoms)
-        self_atoms = self.atoms
-        self_bonds = self.bonds
-
-        # Step 1: Add atoms from submol to self, with adjusted indices
-        for atom in submol.atoms:
-            # Create a new Atom with an updated index and add it to self.atoms
-            new_index = atom.idx + index_offset
-            new_atom = Atom(idx=new_index, sym=atom.sym, coord=atom.coord)
-            self_atoms = np.append(self_atoms, new_atom)
-        print(self_atoms)
-
-        # Step 2: Add bonds from submol to self, with adjusted indices
-        for (atomA_idx, atomB_idx), bond_type in submol.bonds.items():
-            new_atomA_idx = atomA_idx + index_offset
-            new_atomB_idx = atomB_idx + index_offset
-            bond_key = tuple(sorted((new_atomA_idx, new_atomB_idx)))
-            self_bonds[bond_key] = bond_type
-            print(self_bonds)
-        #     # Adjust indices by adding the offset
-        #     new_atomA_idx = atomA_idx + index_offset
-        #     new_atomB_idx = atomB_idx + index_offset
-
-        #     # Use the adjusted indices to add the bond to self.bonds
-        #     bond_key = tuple(sorted((new_atomA_idx, new_atomB_idx)))
-        #     self.bonds[bond_key] = bond_type
-
-        # # Step 3: Reindex atoms and bonds in self if requested
-        # if reindex:
-        #     self.reindex_atoms_and_bonds()
-            
     def reset_index_atoms_bonds(self):
         """
         Reindex all atoms in self.atoms and update self.bonds to reflect new atom indices.
@@ -842,6 +887,20 @@ class Mol:
         self._coords = np.array([atom.coord for atom in self.atoms]) if self.atoms else None
         self.reindex_atoms_and_bonds()
         
+    def deleteHs(self):
+        """
+        Remove all hydrogen atoms and any associated bonds from the molecule.
+        """
+        hydrogen_indices = {atom.idx for atom in self.atoms if atom.sym == "H"}
+        self.atoms = [atom for atom in self.atoms if atom.idx not in hydrogen_indices]
+        self.bonds = {
+            bond_key: bond_type
+            for bond_key, bond_type in self.bonds.items()
+            if bond_key[0] not in hydrogen_indices and bond_key[1] not in hydrogen_indices
+        }
+        self.reindex_atoms_and_bonds()
+    
+        
     def add_bond(self, atomA_idx, atomB_idx, bond_type):
         """
         Adds a bond between two atoms with a specified bond type.
@@ -860,9 +919,11 @@ class Mol:
         self : Mol
             Returns the instance to allow method chaining.
         """
-        # Use a sorted tuple of atom indices as the key to ensure order independence
         bond_key = tuple(sorted((atomA_idx, atomB_idx)))
         self.bonds[bond_key] = bond_type
+        sorted_bonds = dict(sorted(self.bonds.items(), key=lambda x: x[0][0]))
+        self.bonds = sorted_bonds
+        
         return self
     
     def delete_bond(self, atomA_idx, atomB_idx):
@@ -1103,6 +1164,14 @@ class Mol:
         }
         return bond_order_map.get(bond_type, 0)  # Default to 0 if bond type is unrecognized
     
+    def calc_buriedV(self, radius=3.5, meshspace=0.1, bondiscale=1.17, hydrogens=False):
+        # Delete hydrogens if specified
+        if not hydrogens:
+            self.deleteHs()
+        
+        # Find the metal atom and center the coordinates around it
+        
+    
     
 class MolLigand(Mol):
     def __init__(self):
@@ -1201,7 +1270,8 @@ class MolLigand(Mol):
             adjcatoms[idx_catom] = atomnearby
         return adjcatoms
     
-    # def lonepair(self):
+    # def lonepair_vec(self):
+    
     
         
         
