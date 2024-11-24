@@ -21,7 +21,7 @@ Replace `yourusername` with your GitHub username.
 Move into the project directory:
 
 ```bash
-cd my-package
+cd mypackage
 ```
 
 ### 3. Create the Conda Environment
