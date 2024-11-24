@@ -1,7 +1,7 @@
 import py3Dmol
 import math
 
-def showcoord_fromfile(file_paths, format, addlabel=True, showH=False, style='stick'):
+def showcoord_fromfile(format, file_paths, addlabel=True, showH=False, style='stick'):
     with open(file_paths, 'r') as file:
         string = file.read()
  
@@ -25,7 +25,7 @@ def showcoord_fromfile(file_paths, format, addlabel=True, showH=False, style='st
     view.zoomTo()
     return view.show()
 
-def showcoord_fromstr(string, format , addlabel=True, style='stick'):
+def showcoord_fromstr(format, string , addlabel=True, style='stick'):
     view = py3Dmol.view(width=400, height=300)
     view.addModel(string, format)
     view.setStyle({style: {'colorscheme': 'Jmol'}})
@@ -39,7 +39,7 @@ def showcoord_fromstr(string, format , addlabel=True, style='stick'):
     view.zoomTo()
     return view.show()
 
-def showcoords_fromfile(file_paths, format, columns=5, size=150, style='stick'):
+def showcoords_fromfile(format, file_paths, columns=5, size=150, style='stick'):
     # format = 'xyz', 'mol2'
     columns = 5
     w = size
@@ -77,7 +77,7 @@ def showcoords_fromfile(file_paths, format, columns=5, size=150, style='stick'):
     
     view.show()
     
-def showcoords_fromstr(strings, format, columns=5, size=150, style='stick'):
+def showcoords_fromstr(format, strings, columns=5, size=150, style='stick'):
     # format = 'xyz', 'mol2'
     columns = 5
     w = size
