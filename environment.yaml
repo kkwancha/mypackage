@@ -1,4 +1,4 @@
-name: vpml
+name: mypackage
 channels:
   - https://conda.ccdc.cam.ac.uk
   - conda-forge
