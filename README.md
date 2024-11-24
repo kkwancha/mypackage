@@ -11,7 +11,7 @@ Follow these steps to set up the project on your local machine.
 Clone the repository using Git:
 
 ```bash
-git clone https://github.com/yourusername/mypackage.git
+git clone https://github.com/kkwancha/mypackage.git
 ```
 
 Replace `yourusername` with your GitHub username.
