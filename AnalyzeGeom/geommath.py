@@ -132,3 +132,7 @@ def rotate_coordinates(coords, center, rotation_matrix):
     # Translate back to original position
     final_coords = rotated_coords + center
     return final_coords
+
+def translate_bysettingorigin(coords, idx_toorigin):
+    translated_coords = coords - coords[idx_toorigin]
+    return translated_coords

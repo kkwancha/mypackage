@@ -1,13 +1,13 @@
 import py3Dmol
 import math
 
-def showcoord_fromfile(file_paths, format, addlabel=True):
+def showcoord_fromfile(file_paths, format, addlabel=True, showH=False, style='stick'):
     with open(file_paths, 'r') as file:
         string = file.read()
  
     view = py3Dmol.view(width=400, height=300)
     view.addModel(string, format)
-    view.setStyle({'stick': {'colorscheme': 'Jmol'}})
+    view.setStyle({style: {'colorscheme': 'Jmol'}})
     if addlabel:
         view.addPropertyLabels('index',
                             {'not': {'elem': 'H'}}, 
@@ -15,13 +15,20 @@ def showcoord_fromfile(file_paths, format, addlabel=True):
                                 'color':'black'})
                                 # 'fontColor': 'black',
                                 # 'showBackground': False});
+        if showH:
+            view.addPropertyLabels('index',
+                        {}, 
+                        {'fontSize': 10, 
+                            'color':'black'})
+                            # 'fontColor': 'black',
+                            # 'showBackground': False});
     view.zoomTo()
     return view.show()
 
-def showcoord_fromstr(string, format ,addlabel=True):
+def showcoord_fromstr(string, format , addlabel=True, style='stick'):
     view = py3Dmol.view(width=400, height=300)
     view.addModel(string, format)
-    view.setStyle({'stick': {'colorscheme': 'Jmol'}})
+    view.setStyle({style: {'colorscheme': 'Jmol'}})
     if addlabel:
         view.addPropertyLabels('index',
                             {'not': {'elem': 'H'}}, 
@@ -32,7 +39,7 @@ def showcoord_fromstr(string, format ,addlabel=True):
     view.zoomTo()
     return view.show()
 
-def showcoords_fromfile(file_paths, format, columns=5, size=150):
+def showcoords_fromfile(file_paths, format, columns=5, size=150, style='stick'):
     # format = 'xyz', 'mol2'
     columns = 5
     w = size
@@ -65,10 +72,12 @@ def showcoords_fromfile(file_paths, format, columns=5, size=150):
             x += 1
             y = 0
     
-    view.setStyle({'stick': {'colorscheme': 'Jmol'}})
+    # view.setStyle({'stick': {'colorscheme': 'Jmol'}})
+    view.setStyle({style: {'colorscheme': 'Jmol'}})
+    
     view.show()
     
-def showcoords_fromstr(strings, format, columns=5, size=150):
+def showcoords_fromstr(strings, format, columns=5, size=150, style='stick'):
     # format = 'xyz', 'mol2'
     columns = 5
     w = size
@@ -99,7 +108,7 @@ def showcoords_fromstr(strings, format, columns=5, size=150):
             x += 1
             y = 0
     
-    view.setStyle({'stick': {'colorscheme': 'Jmol'}})
+    view.setStyle({style: {'colorscheme': 'Jmol'}})
     view.show()
 
 def showvib_fromxyzstr(xyz_str):

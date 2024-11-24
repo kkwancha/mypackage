@@ -1168,9 +1168,56 @@ class Mol:
         # Delete hydrogens if specified
         if not hydrogens:
             self.deleteHs()
+    
+    def set_coordinate(self, index, new_coordinate):
+        """
+        Update the coordinates of a specific atom in the molecule.
+
+        Args:
+            index (int): The index of the atom to update.
+            new_coordinate (tuple[float, float, float]): The new (x, y, z) coordinates for the atom.
+
+        Raises:
+            IndexError: If the provided index is out of range.
+            ValueError: If `new_coordinate` is not a tuple of length 3.
+
+        Example:
+            >>> mol = Mol(['C', 'H'], [(0.0, 0.0, 0.0), (1.0, 1.0, 1.0)])
+            >>> mol.set_coordinate(1, (1.5, 1.5, 1.5))
+        """
+        if index < 0 or index >= len(self.coords):
+            raise IndexError("Index out of range for atom coordinates.")
+        if len(new_coordinate) != 3:
+            raise ValueError("Coordinates must be a tuple of 3 values (x, y, z).")
+
+        self.coords[index] = tuple(new_coordinate)
+        print(f"Updated atom at index {index} to new coordinates: {self.coords[index]}")
         
+    def set_origin_by_index(self, index):
+        """
+        Translate all coordinates such that the atom at the given index becomes the origin.
+
+        Args:
+            index (int): Index of the atom to set as the origin.
+
+        Raises:
+            IndexError: If the index is out of range.
+        """
+        if index < 0 or index >= self.natoms:
+            raise IndexError("Index out of range for atom coordinates.")
+
+        # Get the coordinate of the atom at the given index
+        origin = self.coords[index]
+
+        # Translate all coordinates
+        self.coords -= origin
+        print(f"Translated all coordinates so atom at index {index} is now at the origin.")
         # Find the metal atom and center the coordinates around it
-        
+    
+    # def adjust_bondlength(self, atom_fix_idx, atom_scaled_idx, scaled_distance):
+    #     atom_fix_coord = self.coords[atom_fix_idx]
+    #     atom_scaled_coord = self.coords[atom_scaled_idx]
+    #     new_atom_scaled_coord = 
     
     
 class MolLigand(Mol):
