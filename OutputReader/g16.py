@@ -185,7 +185,6 @@ class MainReader:
         lines = self.lines_forward
         for line in lines:
             if 'Unable to Open any file for archive entry.' in line:
-                print('hi')
                 reading = True
                 continue
             elif 'The archive entry for this job was punched.' in line:
@@ -711,9 +710,9 @@ class ReadSP(MainReader):
                 break
         return energySCF
 
-# class ReadOpt:
+# class ReadOpt(MainReader):
     
-# class ReadFreq:
+# class ReadFreq(MainReader):
     
 class ReadIRC(MainReader):
     def __init__(self, logfile):

@@ -10,16 +10,17 @@ TEMPLATE_GEOM = {'li'  : 'li.xyz',
                  'tsoa': 'tsoa.xyz',
                  'tst' : 'tst.xyz',
                  'tsre': 'tsre.xyz',
-                 'i4':   'i4.xyz',
+                 'I4_old': 'I4_old.xyz',
                  'I4_new':'I4_new.xyz',
-                 'tsoa1coord': 'tsoa1coord.xyz'}
+                 'tsoa1coord': 'tsoa1coord.xyz',
+                 'tsre1coord_Pd': 'tsre1coord_Pd.xyz',
+                 'tsre1coord_Ni': 'tsre1coord_Ni.xyz',}
 
 def create_template_Mol(geom):
     geom_template_path = TEMPLATE_GEOM[geom]
     file_path = os.path.join(MYPACKAGE_DIR, 'DataBase/Geometries/', geom_template_path)
     template_Mol = geomobj.Mol()
     template_Mol.readfile('xyz', file_path)
-    print('hi')
     return template_Mol
 
 def add_metal(metal_center):
