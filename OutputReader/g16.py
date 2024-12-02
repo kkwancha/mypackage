@@ -344,12 +344,11 @@ class MainReader:
             xyz_string (str):
                 Atomic coordinates in XYZ format.
         """
-        self.create_xyz_df()
-        xyz_num = len(self.xyz_df)
-        xyz_string = f"{xyz_num}\n"
-        xyz_string += f"{xyz_comment}\n"
-        for _, row in self.xyz_df.iterrows():
-            xyz_string += f"{row['element']} {row['x']} {row['y']} {row['z']}\n"
+        natoms, xyz_comment, xyz_coords = self.coord_xyz_endjob()
+        xyz_string = f'{str(natoms)}\n'
+        xyz_string += f'{xyz_comment}\n'
+        for coord in xyz_coords:
+            xyz_string += f'{coord}\n'
         return xyz_string
     
     def to_xyzstring_fromanydf(self, xyz_df, xyz_comment=''):
