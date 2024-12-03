@@ -73,8 +73,20 @@ class MainReader:
         lines = self.lines_forward
         for idx, line in enumerate(lines):
             if 'Stoichiometry' in line:
-                formula = line.split()[1]
+                raw_formula = line.split()[1]
                 break
+            
+        # Manually remove anything enclosed in parentheses
+        formula = ""
+        inside_parentheses = False
+        for char in raw_formula:
+            if char == '(':
+                inside_parentheses = True
+            elif char == ')':
+                inside_parentheses = False
+            elif not inside_parentheses:
+                formula += char
+        
         element_counts = {}
         i = 0
         while i < len(formula):
