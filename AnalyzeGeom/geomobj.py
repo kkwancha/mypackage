@@ -410,15 +410,10 @@ class Mol:
     
     def get_atom_hybridizations(self):
         OB_Mol = self.xyztoOBMol()
-        # Initialize a dictionary to store hybridization information
         hybridizations = {}
-
-        # Iterate over all atoms in the molecule
         for atom in openbabel.OBMolAtomIter(OB_Mol):
             atom_index = atom.GetIdx() - 1  # Zero-based indexing
             hyb = atom.GetHyb()  # Get hybridization
-            
-            # Map hybridization integer to string representation
             if hyb == 1:
                 hyb_str = 'sp'
             elif hyb == 2:
@@ -427,9 +422,7 @@ class Mol:
                 hyb_str = 'sp3'
             else:
                 hyb_str = 'other'  # For any hybridization not covered
-
             hybridizations[atom_index] = hyb_str
-
         return hybridizations
             
     def get_coord_byidx(self, idx):

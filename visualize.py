@@ -125,3 +125,20 @@ def showvib_fromxyzstr(xyz_str):
     view.animate({'loop': 'backAndForth'})
     view.zoomTo()
     return view.show()
+
+def showvib_fromxyzfile(xyz_file):
+    with open(xyz_file, 'r') as f:
+        xyz_str = f.read()
+    view = py3Dmol.view(width=400, height=300)
+    view.addModel(xyz_str,'xyz',{'vibrate': {'frames':10,'amplitude':1}})
+    view.setStyle({'stick': {'colorscheme': 'Jmol'}})
+    view.addPropertyLabels('index',
+                           {'not': {'elem': 'H'}}, 
+                           {'fontSize': 10, 
+                            'color':'black'})
+                            # 'fontColor': 'black',
+                            # 'showBackground': False});
+    view.setBackgroundColor('0xeeeeee')
+    view.animate({'loop': 'backAndForth'})
+    view.zoomTo()
+    return view.show()
